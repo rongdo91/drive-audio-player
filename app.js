@@ -322,20 +322,24 @@ async function playChapter(index) {
 
     // Get audio URL and play
     try {
-        const url = `https://www.googleapis.com/drive/v3/files/${file.id}?alt=media`;
+        let blobUrl;
 
-        audio.src = url;
-        audio.playbackRate = currentSpeed;
+        // Sử dụng blob đã pre-fetch nếu có
+        if (file.blobUrl) {
+            blobUrl = file.blobUrl;
+        } else {
+            const url = `https://www.googleapis.com/drive/v3/files/${file.id}?alt=media`;
+            const response = await fetch(url, {
+                headers: { Authorization: `Bearer ${accessToken}` }
+            });
 
-        // Set auth header via fetch and blob
-        const response = await fetch(url, {
-            headers: { Authorization: `Bearer ${accessToken}` }
-        });
+            if (!response.ok) throw new Error('Failed to fetch audio');
 
-        if (!response.ok) throw new Error('Failed to fetch audio');
+            const blob = await response.blob();
+            blobUrl = URL.createObjectURL(blob);
+        }
 
-        const blob = await response.blob();
-        audio.src = URL.createObjectURL(blob);
+        audio.src = blobUrl;
         audio.playbackRate = currentSpeed;
         audio.play();
 
@@ -380,6 +384,73 @@ function setSpeed(speed) {
 audio.addEventListener('ended', () => {
     if (document.getElementById('autoNext').checked) {
         playNext();
+    }
+});
+
+// =============================================
+// MEDIA SESSION API (iOS Lock Screen Support)
+// =============================================
+
+function updateMediaSession() {
+    if ('mediaSession' in navigator) {
+        const currentFile = audioFiles[currentIndex];
+        const storyName = folderHistory.length > 1
+            ? folderHistory[folderHistory.length - 1].name
+            : 'Audio';
+
+        navigator.mediaSession.metadata = new MediaMetadata({
+            title: currentFile ? currentFile.name : 'Unknown',
+            artist: storyName,
+            album: 'Drive Audio Player'
+        });
+
+        // Đăng ký các action handlers
+        navigator.mediaSession.setActionHandler('play', () => {
+            audio.play();
+        });
+
+        navigator.mediaSession.setActionHandler('pause', () => {
+            audio.pause();
+        });
+
+        navigator.mediaSession.setActionHandler('previoustrack', () => {
+            playPrev();
+        });
+
+        navigator.mediaSession.setActionHandler('nexttrack', () => {
+            playNext();
+        });
+
+        navigator.mediaSession.setActionHandler('seekbackward', (details) => {
+            audio.currentTime = Math.max(0, audio.currentTime - (details.seekOffset || 10));
+        });
+
+        navigator.mediaSession.setActionHandler('seekforward', (details) => {
+            audio.currentTime = Math.min(audio.duration, audio.currentTime + (details.seekOffset || 10));
+        });
+    }
+}
+
+// Cập nhật Media Session khi phát chương mới
+audio.addEventListener('play', updateMediaSession);
+
+// Pre-load chương tiếp theo khi gần hết chương hiện tại
+audio.addEventListener('timeupdate', () => {
+    // Khi còn 10 giây, chuẩn bị sẵn chương tiếp
+    if (audio.duration && (audio.duration - audio.currentTime) < 10) {
+        const nextIndex = currentIndex + 1;
+        if (nextIndex < audioFiles.length && document.getElementById('autoNext').checked) {
+            // Pre-fetch next chapter
+            const nextFile = audioFiles[nextIndex];
+            if (!nextFile.prefetched) {
+                fetch(`https://www.googleapis.com/drive/v3/files/${nextFile.id}?alt=media`, {
+                    headers: { Authorization: `Bearer ${accessToken}` }
+                }).then(response => response.blob()).then(blob => {
+                    nextFile.blobUrl = URL.createObjectURL(blob);
+                    nextFile.prefetched = true;
+                }).catch(() => { });
+            }
+        }
     }
 });
 
