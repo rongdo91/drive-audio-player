@@ -154,20 +154,35 @@ async function loadFolder(folderId) {
     currentFolderId = folderId;
 
     try {
-        const response = await gapi.client.drive.files.list({
-            q: `'${folderId}' in parents and trashed=false`,
-            fields: 'files(id, name, mimeType, size)',
-            pageSize: 1000
-        });
+        let allFiles = [];
+        let pageToken = null;
 
-        let files = response.result.files || [];
+        // Fetch all pages
+        do {
+            const response = await gapi.client.drive.files.list({
+                q: `'${folderId}' in parents and trashed=false`,
+                fields: 'nextPageToken, files(id, name, mimeType, size)',
+                pageSize: 1000,
+                pageToken: pageToken
+            });
+
+            const files = response.result.files || [];
+            allFiles = allFiles.concat(files);
+            pageToken = response.result.nextPageToken;
+
+            // Update loading message
+            if (pageToken) {
+                document.getElementById('folderList').innerHTML =
+                    `<div class="loading">Đang tải... (${allFiles.length} files)</div>`;
+            }
+        } while (pageToken);
 
         // Sort files naturally (1, 2, 10, 100 instead of 1, 10, 100, 2)
-        files.sort((a, b) => {
+        allFiles.sort((a, b) => {
             return a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' });
         });
 
-        renderFolderContents(files);
+        renderFolderContents(allFiles);
         updateBreadcrumb();
     } catch (error) {
         console.error('Error loading folder:', error);
