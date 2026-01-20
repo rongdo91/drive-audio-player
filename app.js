@@ -54,6 +54,9 @@ async function initializeGapiClient() {
 // AUTHENTICATION
 // =============================================
 
+let tokenExpiryTime = null;
+let tokenRefreshInterval = null;
+
 function handleSignIn() {
     tokenClient.requestAccessToken({ prompt: 'consent' });
 }
@@ -68,15 +71,84 @@ function handleAuthCallback(response) {
     localStorage.setItem('drive_access_token', accessToken);
     gapi.client.setToken({ access_token: accessToken });
 
+    // Lưu thời gian hết hạn (thường là 1 giờ, ta refresh sau 45 phút)
+    tokenExpiryTime = Date.now() + (45 * 60 * 1000);
+    localStorage.setItem('drive_token_expiry', tokenExpiryTime);
+
+    // Thiết lập auto refresh
+    setupTokenRefresh();
+
     // Get user info
     fetchUserInfo();
     showMainApp();
 }
 
+function setupTokenRefresh() {
+    // Xóa interval cũ nếu có
+    if (tokenRefreshInterval) {
+        clearInterval(tokenRefreshInterval);
+    }
+
+    // Kiểm tra token mỗi 5 phút
+    tokenRefreshInterval = setInterval(() => {
+        const expiry = parseInt(localStorage.getItem('drive_token_expiry') || 0);
+        if (Date.now() > expiry) {
+            console.log('Token hết hạn, đang refresh...');
+            silentTokenRefresh();
+        }
+    }, 5 * 60 * 1000);
+}
+
+// Refresh token ngầm không cần user interaction
+function silentTokenRefresh() {
+    return new Promise((resolve, reject) => {
+        tokenClient.requestAccessToken({ prompt: '' });
+        // Callback sẽ được gọi trong handleAuthCallback
+        setTimeout(() => {
+            if (accessToken) {
+                resolve(accessToken);
+            } else {
+                reject(new Error('Token refresh failed'));
+            }
+        }, 3000);
+    });
+}
+
+// Wrapper để fetch với auto retry khi token hết hạn
+async function fetchWithAuth(url, options = {}) {
+    const headers = {
+        ...options.headers,
+        Authorization: `Bearer ${accessToken}`
+    };
+
+    let response = await fetch(url, { ...options, headers });
+
+    // Nếu 401, thử refresh token và retry
+    if (response.status === 401) {
+        console.log('Token expired, refreshing...');
+        try {
+            await silentTokenRefresh();
+            headers.Authorization = `Bearer ${accessToken}`;
+            response = await fetch(url, { ...options, headers });
+        } catch (error) {
+            // Nếu không refresh được, yêu cầu đăng nhập lại
+            alert('Phiên đăng nhập hết hạn. Vui lòng đăng nhập lại.');
+            handleSignOut();
+            throw error;
+        }
+    }
+
+    return response;
+}
+
 function handleSignOut() {
+    if (tokenRefreshInterval) {
+        clearInterval(tokenRefreshInterval);
+    }
     google.accounts.oauth2.revoke(accessToken, () => {
         accessToken = null;
         localStorage.removeItem('drive_access_token');
+        localStorage.removeItem('drive_token_expiry');
         localStorage.removeItem('drive_user');
         document.getElementById('loginScreen').classList.remove('hidden');
         document.getElementById('mainApp').classList.add('hidden');
@@ -86,9 +158,7 @@ function handleSignOut() {
 
 async function fetchUserInfo() {
     try {
-        const response = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
-            headers: { Authorization: `Bearer ${accessToken}` }
-        });
+        const response = await fetchWithAuth('https://www.googleapis.com/oauth2/v2/userinfo');
         const user = await response.json();
 
         document.getElementById('userAvatar').src = user.picture;
@@ -329,9 +399,7 @@ async function playChapter(index) {
             blobUrl = file.blobUrl;
         } else {
             const url = `https://www.googleapis.com/drive/v3/files/${file.id}?alt=media`;
-            const response = await fetch(url, {
-                headers: { Authorization: `Bearer ${accessToken}` }
-            });
+            const response = await fetchWithAuth(url);
 
             if (!response.ok) throw new Error('Failed to fetch audio');
 
@@ -443,12 +511,15 @@ audio.addEventListener('timeupdate', () => {
             // Pre-fetch next chapter
             const nextFile = audioFiles[nextIndex];
             if (!nextFile.prefetched) {
-                fetch(`https://www.googleapis.com/drive/v3/files/${nextFile.id}?alt=media`, {
-                    headers: { Authorization: `Bearer ${accessToken}` }
-                }).then(response => response.blob()).then(blob => {
-                    nextFile.blobUrl = URL.createObjectURL(blob);
-                    nextFile.prefetched = true;
-                }).catch(() => { });
+                nextFile.prefetched = true; // Đánh dấu ngay để tránh fetch trùng
+                fetchWithAuth(`https://www.googleapis.com/drive/v3/files/${nextFile.id}?alt=media`)
+                    .then(response => response.blob())
+                    .then(blob => {
+                        nextFile.blobUrl = URL.createObjectURL(blob);
+                    })
+                    .catch(() => {
+                        nextFile.prefetched = false; // Cho phép thử lại nếu lỗi
+                    });
             }
         }
     }
