@@ -78,9 +78,21 @@ function handleAuthCallback(response) {
     // Thiết lập auto refresh
     setupTokenRefresh();
 
-    // Get user info
-    fetchUserInfo();
-    showMainApp();
+    // Xóa thanh refresh nếu có
+    const refreshBar = document.getElementById('refreshBar');
+    if (refreshBar) refreshBar.remove();
+
+    // Kiểm tra xem có cần resume không
+    const needResume = localStorage.getItem('drive_need_resume');
+    if (needResume) {
+        localStorage.removeItem('drive_need_resume');
+        // Resume playback
+        resumeAfterRelogin();
+    } else {
+        // Get user info và show main app
+        fetchUserInfo();
+        showMainApp();
+    }
 }
 
 function setupTokenRefresh() {
@@ -123,37 +135,76 @@ async function fetchWithAuth(url, options = {}) {
 
     let response = await fetch(url, { ...options, headers });
 
-    // Nếu 401, thử refresh token và retry
+    // Nếu 401, hiện nút refresh login
     if (response.status === 401) {
-        console.log('Token expired, refreshing...');
-        try {
-            await silentTokenRefresh();
-            headers.Authorization = `Bearer ${accessToken}`;
-            response = await fetch(url, { ...options, headers });
-        } catch (error) {
-            // Nếu không refresh được, yêu cầu đăng nhập lại
-            alert('Phiên đăng nhập hết hạn. Vui lòng đăng nhập lại.');
-            handleSignOut();
-            throw error;
-        }
+        console.log('Token expired');
+        showRefreshLoginButton();
+        throw new Error('TOKEN_EXPIRED');
     }
 
     return response;
+}
+
+// Hiện nút refresh login (không mất trạng thái)
+function showRefreshLoginButton() {
+    // Tạm dừng audio
+    audio.pause();
+
+    // Hiện thông báo
+    let refreshBar = document.getElementById('refreshBar');
+    if (!refreshBar) {
+        refreshBar = document.createElement('div');
+        refreshBar.id = 'refreshBar';
+        refreshBar.style.cssText = `
+            position: fixed; top: 0; left: 0; right: 0; z-index: 9999;
+            background: #ef4444; color: white; padding: 12px 20px;
+            display: flex; justify-content: space-between; align-items: center;
+            font-size: 14px;
+        `;
+        refreshBar.innerHTML = `
+            <span>⚠️ Phiên đăng nhập hết hạn</span>
+            <button onclick="refreshLogin()" style="
+                background: white; color: #ef4444; border: none;
+                padding: 8px 16px; border-radius: 6px; font-weight: bold;
+                cursor: pointer;
+            ">Đăng nhập lại</button>
+        `;
+        document.body.prepend(refreshBar);
+    }
+}
+
+// Đăng nhập lại (giữ nguyên trạng thái)
+function refreshLogin() {
+    // Lưu trạng thái hiện tại
+    saveState();
+
+    // Đánh dấu cần resume sau khi đăng nhập
+    localStorage.setItem('drive_need_resume', 'true');
+
+    // Xóa thanh thông báo
+    const refreshBar = document.getElementById('refreshBar');
+    if (refreshBar) refreshBar.remove();
+
+    // Yêu cầu đăng nhập lại (có popup)
+    tokenClient.requestAccessToken({ prompt: 'consent' });
 }
 
 function handleSignOut() {
     if (tokenRefreshInterval) {
         clearInterval(tokenRefreshInterval);
     }
-    google.accounts.oauth2.revoke(accessToken, () => {
-        accessToken = null;
-        localStorage.removeItem('drive_access_token');
-        localStorage.removeItem('drive_token_expiry');
-        localStorage.removeItem('drive_user');
-        document.getElementById('loginScreen').classList.remove('hidden');
-        document.getElementById('mainApp').classList.add('hidden');
-        document.getElementById('userInfo').classList.add('hidden');
-    });
+    accessToken = null;
+    localStorage.removeItem('drive_access_token');
+    localStorage.removeItem('drive_token_expiry');
+    localStorage.removeItem('drive_user');
+    localStorage.removeItem('drive_need_resume');
+    document.getElementById('loginScreen').classList.remove('hidden');
+    document.getElementById('mainApp').classList.add('hidden');
+    document.getElementById('userInfo').classList.add('hidden');
+
+    // Xóa thanh refresh nếu có
+    const refreshBar = document.getElementById('refreshBar');
+    if (refreshBar) refreshBar.remove();
 }
 
 async function fetchUserInfo() {
@@ -633,3 +684,61 @@ setInterval(() => {
 // Lưu khi pause hoặc chuyển chương
 audio.addEventListener('pause', saveState);
 audio.addEventListener('ended', saveState);
+
+// Resume sau khi đăng nhập lại (khi token hết hạn)
+async function resumeAfterRelogin() {
+    console.log('Resuming after re-login...');
+
+    const savedState = localStorage.getItem('drive_player_state');
+    if (!savedState) {
+        showMainApp();
+        return;
+    }
+
+    try {
+        const state = JSON.parse(savedState);
+
+        // Khôi phục folder history
+        if (state.folderHistory) {
+            folderHistory = state.folderHistory;
+            currentFolderId = state.currentFolderId;
+        }
+
+        // Show main app
+        document.getElementById('loginScreen').classList.add('hidden');
+        document.getElementById('mainApp').classList.remove('hidden');
+
+        // Fetch lại audio file hiện tại
+        const currentFileId = state.audioFileIds[state.currentIndex];
+        const currentFileName = state.audioFileNames[state.currentIndex];
+
+        if (currentFileId) {
+            // Tải và phát lại file hiện tại
+            const url = `https://www.googleapis.com/drive/v3/files/${currentFileId}?alt=media`;
+            const response = await fetchWithAuth(url);
+
+            if (response.ok) {
+                const blob = await response.blob();
+                audio.src = URL.createObjectURL(blob);
+                audio.currentTime = state.audioTime || 0;
+                audio.playbackRate = currentSpeed;
+                audio.play();
+
+                // Cập nhật UI
+                document.getElementById('playerCard').classList.remove('hidden');
+                document.getElementById('chapterTitle').textContent = currentFileName;
+                document.getElementById('progressText').textContent =
+                    `${state.currentIndex + 1} / ${state.audioFileIds.length}`;
+
+                console.log('Playback resumed successfully!');
+            }
+        }
+
+        // Load lại folder và danh sách (background)
+        loadFolder(currentFolderId);
+
+    } catch (error) {
+        console.error('Error resuming:', error);
+        showMainApp();
+    }
+}
