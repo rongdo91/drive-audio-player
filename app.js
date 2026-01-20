@@ -120,8 +120,14 @@ async function showMainApp() {
         fetchUserInfo();
     }
 
-    // Find root folder
-    await findRootFolder();
+    // Thử khôi phục tiến trình đã lưu
+    const hasSavedState = localStorage.getItem('drive_player_state');
+    if (hasSavedState) {
+        await restorePlaybackState();
+    } else {
+        // Nếu không có, tìm folder gốc
+        await findRootFolder();
+    }
 }
 
 async function findRootFolder() {
@@ -416,7 +422,9 @@ function saveState() {
         folderHistory,
         currentFolderId,
         currentIndex,
-        audioFileIds: audioFiles.map(f => f.id)
+        audioTime: audio.currentTime || 0,
+        audioFileIds: audioFiles.map(f => f.id),
+        audioFileNames: audioFiles.map(f => f.name)
     };
     localStorage.setItem('drive_player_state', JSON.stringify(state));
 }
@@ -427,3 +435,59 @@ function loadSavedState() {
         currentSpeed = parseFloat(savedSpeed);
     }
 }
+
+// Khôi phục tiến trình sau khi đăng nhập
+async function restorePlaybackState() {
+    const savedState = localStorage.getItem('drive_player_state');
+    if (!savedState) return;
+
+    try {
+        const state = JSON.parse(savedState);
+
+        if (state.folderHistory && state.folderHistory.length > 0) {
+            folderHistory = state.folderHistory;
+            currentFolderId = state.currentFolderId;
+
+            // Load folder
+            await loadFolder(currentFolderId);
+
+            // Nếu có audio files đã lưu, khôi phục playlist
+            if (state.audioFileIds && state.audioFileIds.length > 0 && audioFiles.length > 0) {
+                // Show player
+                document.getElementById('playerCard').classList.remove('hidden');
+                document.getElementById('chapterListCard').classList.remove('hidden');
+
+                const storyName = folderHistory.length > 1
+                    ? folderHistory[folderHistory.length - 1].name
+                    : 'Unknown';
+                document.getElementById('storyName').textContent = storyName;
+
+                renderChapterList();
+
+                // Resume chapter
+                const savedIndex = state.currentIndex || 0;
+                if (savedIndex < audioFiles.length) {
+                    await playChapter(savedIndex);
+
+                    // Resume audio position
+                    if (state.audioTime && state.audioTime > 0) {
+                        audio.currentTime = state.audioTime;
+                    }
+                }
+            }
+        }
+    } catch (error) {
+        console.error('Error restoring state:', error);
+    }
+}
+
+// Lưu vị trí audio định kỳ (mỗi 5 giây)
+setInterval(() => {
+    if (audio && !audio.paused && audioFiles.length > 0) {
+        saveState();
+    }
+}, 5000);
+
+// Lưu khi pause hoặc chuyển chương
+audio.addEventListener('pause', saveState);
+audio.addEventListener('ended', saveState);
