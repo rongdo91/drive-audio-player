@@ -9,6 +9,7 @@ let folderHistory = [];
 let audioFiles = [];
 let currentIndex = 0;
 let currentSpeed = 1;
+let isPublicMode = false; // Flag for public access mode (no login)
 
 const audio = document.getElementById('audioPlayer');
 
@@ -194,10 +195,12 @@ function handleSignOut() {
         clearInterval(tokenRefreshInterval);
     }
     accessToken = null;
+    isPublicMode = false;
     localStorage.removeItem('drive_access_token');
     localStorage.removeItem('drive_token_expiry');
     localStorage.removeItem('drive_user');
     localStorage.removeItem('drive_need_resume');
+    localStorage.removeItem('drive_public_folder');
     document.getElementById('loginScreen').classList.remove('hidden');
     document.getElementById('mainApp').classList.add('hidden');
     document.getElementById('userInfo').classList.add('hidden');
@@ -205,6 +208,87 @@ function handleSignOut() {
     // Xóa thanh refresh nếu có
     const refreshBar = document.getElementById('refreshBar');
     if (refreshBar) refreshBar.remove();
+}
+
+// =============================================
+// PUBLIC ACCESS MODE (No Login Required)
+// =============================================
+
+function handlePublicAccess() {
+    const urlInput = document.getElementById('publicFolderUrl');
+    const url = urlInput.value.trim();
+
+    if (!url) {
+        alert('Vui lòng nhập link folder Google Drive!');
+        return;
+    }
+
+    // Extract folder ID from various Google Drive URL formats
+    let folderId = null;
+
+    // Format: https://drive.google.com/drive/folders/FOLDER_ID
+    const folderMatch = url.match(/\/folders\/([a-zA-Z0-9_-]+)/);
+    if (folderMatch) {
+        folderId = folderMatch[1];
+    }
+
+    // Format: https://drive.google.com/drive/u/0/folders/FOLDER_ID
+    if (!folderId) {
+        const folderMatch2 = url.match(/\/folders\/([a-zA-Z0-9_-]+)/);
+        if (folderMatch2) folderId = folderMatch2[1];
+    }
+
+    // Direct folder ID (no URL, just the ID)
+    if (!folderId && /^[a-zA-Z0-9_-]{20,}$/.test(url)) {
+        folderId = url;
+    }
+
+    if (!folderId) {
+        alert('Không thể nhận diện link folder. Vui lòng kiểm tra lại!\n\nVí dụ: https://drive.google.com/drive/folders/abc123...');
+        return;
+    }
+
+    // Save for future visits
+    localStorage.setItem('drive_public_folder', folderId);
+
+    // Set public mode flag
+    isPublicMode = true;
+    accessToken = null;
+
+    // Hide user info (not logged in)
+    document.getElementById('userInfo').classList.add('hidden');
+
+    // Show public mode indicator
+    showPublicModeIndicator();
+
+    // Enter app with this folder as root
+    folderHistory = [{ id: folderId, name: 'Shared Folder' }];
+    showMainApp();
+    loadFolder(folderId);
+}
+
+function showPublicModeIndicator() {
+    // Remove old indicator if exists
+    const old = document.getElementById('publicModeBar');
+    if (old) old.remove();
+
+    const bar = document.createElement('div');
+    bar.id = 'publicModeBar';
+    bar.style.cssText = `
+        position: fixed; top: 0; left: 0; right: 0; z-index: 9999;
+        background: linear-gradient(135deg, #22c55e, #16a34a);
+        color: white; padding: 8px 20px;
+        display: flex; justify-content: space-between; align-items: center;
+        font-size: 13px;
+    `;
+    bar.innerHTML = `
+        <span>🌐 Chế độ công khai - Không cần đăng nhập</span>
+        <button onclick="handleSignOut()" style="
+            background: rgba(255,255,255,0.2); color: white; border: none;
+            padding: 6px 12px; border-radius: 6px; cursor: pointer;
+        ">Đổi chế độ</button>
+    `;
+    document.body.prepend(bar);
 }
 
 async function fetchUserInfo() {
@@ -286,12 +370,33 @@ async function loadFolder(folderId) {
 
         // Fetch all pages
         do {
-            const response = await gapi.client.drive.files.list({
-                q: `'${folderId}' in parents and trashed=false`,
-                fields: 'nextPageToken, files(id, name, mimeType, size)',
-                pageSize: 1000,
-                pageToken: pageToken
-            });
+            let response;
+
+            if (isPublicMode) {
+                // Public mode: use API key directly (no OAuth)
+                const params = new URLSearchParams({
+                    q: `'${folderId}' in parents and trashed=false`,
+                    fields: 'nextPageToken, files(id, name, mimeType, size)',
+                    pageSize: 1000,
+                    key: CONFIG.API_KEY
+                });
+                if (pageToken) params.append('pageToken', pageToken);
+
+                const res = await fetch(`https://www.googleapis.com/drive/v3/files?${params}`);
+                if (!res.ok) {
+                    const err = await res.json();
+                    throw new Error(err.error?.message || 'Failed to load folder');
+                }
+                response = { result: await res.json() };
+            } else {
+                // Authenticated mode: use gapi client
+                response = await gapi.client.drive.files.list({
+                    q: `'${folderId}' in parents and trashed=false`,
+                    fields: 'nextPageToken, files(id, name, mimeType, size)',
+                    pageSize: 1000,
+                    pageToken: pageToken
+                });
+            }
 
             const files = response.result.files || [];
             allFiles = allFiles.concat(files);
@@ -449,8 +554,17 @@ async function playChapter(index) {
         if (file.blobUrl) {
             blobUrl = file.blobUrl;
         } else {
-            const url = `https://www.googleapis.com/drive/v3/files/${file.id}?alt=media`;
-            const response = await fetchWithAuth(url);
+            let response;
+
+            if (isPublicMode) {
+                // Public mode: use API key directly
+                const url = `https://www.googleapis.com/drive/v3/files/${file.id}?alt=media&key=${CONFIG.API_KEY}`;
+                response = await fetch(url);
+            } else {
+                // Authenticated mode: use fetchWithAuth
+                const url = `https://www.googleapis.com/drive/v3/files/${file.id}?alt=media`;
+                response = await fetchWithAuth(url);
+            }
 
             if (!response.ok) throw new Error('Failed to fetch audio');
 
@@ -563,7 +677,14 @@ audio.addEventListener('timeupdate', () => {
             const nextFile = audioFiles[nextIndex];
             if (!nextFile.prefetched) {
                 nextFile.prefetched = true; // Đánh dấu ngay để tránh fetch trùng
-                fetchWithAuth(`https://www.googleapis.com/drive/v3/files/${nextFile.id}?alt=media`)
+
+                const fetchUrl = isPublicMode
+                    ? `https://www.googleapis.com/drive/v3/files/${nextFile.id}?alt=media&key=${CONFIG.API_KEY}`
+                    : `https://www.googleapis.com/drive/v3/files/${nextFile.id}?alt=media`;
+
+                const fetchFn = isPublicMode ? fetch(fetchUrl) : fetchWithAuth(fetchUrl);
+
+                fetchFn
                     .then(response => response.blob())
                     .then(blob => {
                         nextFile.blobUrl = URL.createObjectURL(blob);
