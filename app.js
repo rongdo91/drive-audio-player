@@ -314,24 +314,31 @@ async function showMainApp() {
     document.getElementById('loginScreen').classList.add('hidden');
     document.getElementById('mainApp').classList.remove('hidden');
 
-    // Load saved user
-    const savedUser = localStorage.getItem('drive_user');
-    if (savedUser) {
-        const user = JSON.parse(savedUser);
-        document.getElementById('userAvatar').src = user.picture;
-        document.getElementById('userName').textContent = user.name;
-        document.getElementById('userInfo').classList.remove('hidden');
-    } else {
-        fetchUserInfo();
+    // Load saved user (only for authenticated mode)
+    if (!isPublicMode) {
+        const savedUser = localStorage.getItem('drive_user');
+        if (savedUser) {
+            const user = JSON.parse(savedUser);
+            document.getElementById('userAvatar').src = user.picture;
+            document.getElementById('userName').textContent = user.name;
+            document.getElementById('userInfo').classList.remove('hidden');
+        } else {
+            fetchUserInfo();
+        }
     }
 
-    // Thử khôi phục tiến trình đã lưu
-    const hasSavedState = localStorage.getItem('drive_player_state');
-    if (hasSavedState) {
-        await restorePlaybackState();
-    } else {
-        // Nếu không có, tìm folder gốc
-        await findRootFolder();
+    // Render viewing history
+    renderHistory();
+
+    // Thử khôi phục tiến trình đã lưu (only if not coming from public access)
+    if (!isPublicMode) {
+        const hasSavedState = localStorage.getItem('drive_player_state');
+        if (hasSavedState) {
+            await restorePlaybackState();
+        } else {
+            // Nếu không có, tìm folder gốc
+            await findRootFolder();
+        }
     }
 }
 
@@ -741,6 +748,145 @@ function saveState() {
         audioFileNames: audioFiles.map(f => f.name)
     };
     localStorage.setItem('drive_player_state', JSON.stringify(state));
+
+    // Also save to viewing history (per story)
+    if (currentFolderId && audioFiles.length > 0) {
+        saveToHistory(currentFolderId, {
+            folderHistory,
+            currentIndex,
+            audioTime: audio.currentTime || 0,
+            totalChapters: audioFiles.length,
+            currentChapterName: audioFiles[currentIndex]?.name || '',
+            lastAccessed: Date.now()
+        });
+    }
+}
+
+// =============================================
+// VIEWING HISTORY (Per Story)
+// =============================================
+
+function getHistory() {
+    try {
+        const history = localStorage.getItem('drive_viewing_history');
+        return history ? JSON.parse(history) : {};
+    } catch {
+        return {};
+    }
+}
+
+function saveToHistory(folderId, data) {
+    const history = getHistory();
+    const storyName = data.folderHistory?.length > 1
+        ? data.folderHistory[data.folderHistory.length - 1].name
+        : 'Unknown';
+
+    history[folderId] = {
+        ...data,
+        storyName,
+        folderId
+    };
+
+    // Keep only last 50 stories
+    const entries = Object.entries(history);
+    if (entries.length > 50) {
+        entries.sort((a, b) => b[1].lastAccessed - a[1].lastAccessed);
+        const trimmed = Object.fromEntries(entries.slice(0, 50));
+        localStorage.setItem('drive_viewing_history', JSON.stringify(trimmed));
+    } else {
+        localStorage.setItem('drive_viewing_history', JSON.stringify(history));
+    }
+}
+
+function getStoryProgress(folderId) {
+    const history = getHistory();
+    return history[folderId] || null;
+}
+
+function renderHistory() {
+    const history = getHistory();
+    const entries = Object.values(history);
+
+    if (entries.length === 0) {
+        document.getElementById('historyCard').classList.add('hidden');
+        return;
+    }
+
+    // Sort by last accessed (newest first)
+    entries.sort((a, b) => b.lastAccessed - a.lastAccessed);
+
+    const container = document.getElementById('historyList');
+    container.innerHTML = entries.slice(0, 10).map(item => `
+        <div class="history-item" onclick="resumeFromHistory('${item.folderId}')">
+            <div class="history-info">
+                <div class="history-name">${escapeHtml(item.storyName)}</div>
+                <div class="history-progress">
+                    Chương ${item.currentIndex + 1}/${item.totalChapters} 
+                    ${item.currentChapterName ? '- ' + escapeHtml(item.currentChapterName.substring(0, 30)) : ''}
+                </div>
+            </div>
+            <div class="history-time">${timeAgo(item.lastAccessed)}</div>
+            <button class="btn-resume" onclick="event.stopPropagation(); resumeFromHistory('${item.folderId}')">
+                ▶️ Tiếp tục
+            </button>
+        </div>
+    `).join('');
+
+    document.getElementById('historyCard').classList.remove('hidden');
+}
+
+function timeAgo(timestamp) {
+    const seconds = Math.floor((Date.now() - timestamp) / 1000);
+
+    if (seconds < 60) return 'Vừa xong';
+    if (seconds < 3600) return Math.floor(seconds / 60) + ' phút trước';
+    if (seconds < 86400) return Math.floor(seconds / 3600) + ' giờ trước';
+    if (seconds < 604800) return Math.floor(seconds / 86400) + ' ngày trước';
+    return Math.floor(seconds / 604800) + ' tuần trước';
+}
+
+async function resumeFromHistory(folderId) {
+    const item = getStoryProgress(folderId);
+    if (!item) return;
+
+    try {
+        // Restore folder history
+        folderHistory = item.folderHistory || [{ id: folderId, name: item.storyName }];
+        currentFolderId = folderId;
+
+        // Load folder
+        await loadFolder(folderId);
+
+        // Start playing from saved position
+        if (audioFiles.length > 0) {
+            document.getElementById('playerCard').classList.remove('hidden');
+            document.getElementById('chapterListCard').classList.remove('hidden');
+            document.getElementById('storyName').textContent = item.storyName;
+
+            renderChapterList();
+
+            const savedIndex = Math.min(item.currentIndex || 0, audioFiles.length - 1);
+            await playChapter(savedIndex);
+
+            // Resume audio position
+            if (item.audioTime && item.audioTime > 0) {
+                audio.currentTime = item.audioTime;
+            }
+        }
+    } catch (error) {
+        console.error('Error resuming from history:', error);
+        alert('Không thể tiếp tục. Vui lòng thử lại.');
+    }
+}
+
+function toggleHistoryCard() {
+    const card = document.getElementById('historyCard');
+    const list = document.getElementById('historyList');
+    if (list.style.display === 'none') {
+        list.style.display = '';
+    } else {
+        list.style.display = 'none';
+    }
 }
 
 function loadSavedState() {
