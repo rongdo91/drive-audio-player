@@ -520,7 +520,7 @@ function updateMediaSession() {
         navigator.mediaSession.metadata = new MediaMetadata({
             title: currentFile ? currentFile.name : 'Unknown',
             artist: storyName,
-            album: 'Drive Audio Player'
+            album: `Chương ${currentIndex + 1}/${audioFiles.length}`
         });
 
         // Đăng ký các action handlers
