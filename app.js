@@ -39,12 +39,32 @@ async function initializeGapiClient() {
             callback: handleAuthCallback,
         });
 
-        // Check if already signed in
+        // Check if already signed in (authenticated mode)
         const savedToken = localStorage.getItem('drive_access_token');
         if (savedToken) {
             accessToken = savedToken;
             gapi.client.setToken({ access_token: savedToken });
             showMainApp();
+            return;
+        }
+
+        // Check for saved public folder (public mode - no login)
+        const savedPublicFolder = localStorage.getItem('drive_public_folder');
+        if (savedPublicFolder) {
+            // Auto restore public mode
+            isPublicMode = true;
+            accessToken = null;
+
+            // Hide user info (not logged in)
+            document.getElementById('userInfo').classList.add('hidden');
+
+            // Show public mode indicator
+            showPublicModeIndicator();
+
+            // Enter app with saved folder as root
+            folderHistory = [{ id: savedPublicFolder, name: 'Shared Folder' }];
+            showMainApp();
+            loadFolder(savedPublicFolder);
         }
     } catch (error) {
         console.error('Error initializing Google API:', error);
