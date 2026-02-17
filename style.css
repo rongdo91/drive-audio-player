@@ -465,4 +465,208 @@ audio {
     .player-controls {
         flex-wrap: wrap;
     }
+
+    .reader-nav-top,
+    .reader-nav-bottom {
+        flex-wrap: wrap;
+        gap: 8px;
+    }
+
+    .reader-chapter-title {
+        order: -1;
+        width: 100%;
+        text-align: center;
+    }
+}
+
+/* ============== Reader Mode ============== */
+.reader-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 15px;
+}
+
+.reader-header h3 {
+    flex: 1;
+    font-size: 16px;
+    color: var(--text-muted);
+}
+
+.reader-nav-top,
+.reader-nav-bottom {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 0;
+}
+
+.reader-chapter-title {
+    flex: 1;
+    text-align: center;
+    font-weight: 600;
+    font-size: 15px;
+    color: var(--accent);
+}
+
+.reader-content {
+    padding: 20px 0;
+    font-size: 18px;
+    line-height: 1.9;
+    color: #ddd;
+    min-height: 200px;
+    border-top: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+}
+
+.reader-content p {
+    margin-bottom: 16px;
+    text-align: justify;
+}
+
+.reader-content p.tts-highlight {
+    background: rgba(99, 102, 241, 0.15);
+    border-left: 3px solid var(--accent);
+    padding: 8px 12px;
+    border-radius: 0 8px 8px 0;
+    margin-left: -12px;
+    margin-right: -12px;
+}
+
+/* Story action buttons */
+.story-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid var(--border);
+}
+
+.btn-reader {
+    padding: 10px 16px;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 600;
+    transition: all 0.2s;
+    background: #22c55e;
+    color: white;
+    flex: 1;
+}
+
+.btn-reader:hover {
+    background: #1ea550;
+    transform: translateY(-1px);
+}
+
+.btn-audio {
+    background: var(--accent);
+}
+
+.btn-audio:hover {
+    background: var(--accent-hover);
+}
+
+/* TTS Panel */
+.tts-panel {
+    margin-top: 20px;
+    background: var(--bg);
+    border-radius: 12px;
+    overflow: hidden;
+    border: 1px solid var(--border);
+}
+
+.tts-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 14px 16px;
+    cursor: pointer;
+    font-weight: 600;
+    transition: background 0.2s;
+}
+
+.tts-header:hover {
+    background: var(--card-hover);
+}
+
+.tts-controls {
+    padding: 16px;
+    border-top: 1px solid var(--border);
+}
+
+.tts-row {
+    margin-bottom: 12px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.tts-row label {
+    font-size: 14px;
+    color: var(--text-muted);
+    white-space: nowrap;
+}
+
+.tts-select {
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--card);
+    color: var(--text);
+    font-size: 14px;
+}
+
+.tts-select:focus {
+    outline: none;
+    border-color: var(--accent);
+}
+
+.tts-row input[type="range"] {
+    flex: 1;
+    accent-color: var(--accent);
+}
+
+.tts-row input[type="checkbox"] {
+    width: 18px;
+    height: 18px;
+    accent-color: var(--accent);
+}
+
+.tts-buttons {
+    justify-content: center;
+    gap: 12px;
+}
+
+.tts-btn {
+    padding: 10px 16px;
+    font-size: 14px;
+}
+
+.tts-play {
+    padding: 12px 32px;
+    font-size: 16px;
+    background: var(--success);
+}
+
+.tts-play:hover {
+    background: #1ea550;
+}
+
+.tts-play.playing {
+    background: #ef4444;
+}
+
+.tts-play.playing:hover {
+    background: #dc2626;
+}
+
+.tts-status {
+    font-size: 12px;
+    color: var(--text-muted);
+    text-align: center;
+    margin-top: 8px;
 }

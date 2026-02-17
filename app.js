@@ -461,18 +461,55 @@ function renderFolderContents(files) {
     const folders = files.filter(f => f.mimeType === 'application/vnd.google-apps.folder');
     const audios = files.filter(f => f.mimeType.startsWith('audio/') || f.name.endsWith('.mp3'));
 
+    // Check if this is a story folder (has 'chapters' and/or 'audio' subfolders)
+    const chaptersFolder = folders.find(f => f.name.toLowerCase() === 'chapters');
+    const audioFolder = folders.find(f => f.name.toLowerCase() === 'audio');
+    const isStoryFolder = chaptersFolder || audioFolder;
+
     let html = '';
 
-    // Render folders first
-    folders.forEach(folder => {
-        html += `
-            <div class="folder-item" onclick="openFolder('${folder.id}', '${escapeHtml(folder.name)}')">
-                <span class="folder-icon">📁</span>
-                <span class="folder-name">${escapeHtml(folder.name)}</span>
-                <span class="folder-meta">→</span>
-            </div>
-        `;
-    });
+    if (isStoryFolder) {
+        // This is a story folder - show action buttons instead of subfolders
+        const storyName = folderHistory.length > 1
+            ? folderHistory[folderHistory.length - 1].name
+            : 'Truyện';
+
+        html += `<div style="text-align: center; padding: 20px 0;">`;
+        html += `<h3 style="margin-bottom: 15px; font-size: 18px;">${escapeHtml(storyName)}</h3>`;
+        html += `<div class="story-actions" style="border-top: none; justify-content: center;">`;
+
+        if (chaptersFolder) {
+            html += `<button class="btn-reader" onclick="openReaderMode('${chaptersFolder.id}')">📖 Đọc Truyện</button>`;
+        }
+        if (audioFolder) {
+            html += `<button class="btn-reader btn-audio" onclick="openFolder('${audioFolder.id}', 'audio')">🎵 Nghe Audio</button>`;
+        }
+
+        html += `</div></div>`;
+
+        // Also show other folders/files if any
+        const otherFolders = folders.filter(f => f.name.toLowerCase() !== 'chapters' && f.name.toLowerCase() !== 'audio');
+        otherFolders.forEach(folder => {
+            html += `
+                <div class="folder-item" onclick="openFolder('${folder.id}', '${escapeHtml(folder.name)}')">
+                    <span class="folder-icon">📁</span>
+                    <span class="folder-name">${escapeHtml(folder.name)}</span>
+                    <span class="folder-meta">→</span>
+                </div>
+            `;
+        });
+    } else {
+        // Normal folder - render as before
+        folders.forEach(folder => {
+            html += `
+                <div class="folder-item" onclick="openFolder('${folder.id}', '${escapeHtml(folder.name)}')">
+                    <span class="folder-icon">📁</span>
+                    <span class="folder-name">${escapeHtml(folder.name)}</span>
+                    <span class="folder-meta">→</span>
+                </div>
+            `;
+        });
+    }
 
     // Render audio files
     audios.forEach((file, index) => {
@@ -836,21 +873,29 @@ function renderHistory() {
     entries.sort((a, b) => b.lastAccessed - a.lastAccessed);
 
     const container = document.getElementById('historyList');
-    container.innerHTML = entries.slice(0, 10).map(item => `
-        <div class="history-item" onclick="resumeFromHistory('${item.folderId}')">
+    container.innerHTML = entries.slice(0, 10).map(item => {
+        const icon = item.isReader ? '📖' : '🎵';
+        const chapterIdx = item.isReader ? (item.chapterIndex || 0) : (item.currentIndex || 0);
+        const chapterName = item.isReader ? item.chapterName : item.currentChapterName;
+        const resumeFunc = item.isReader
+            ? `resumeReaderFromHistory('${item.folderId}')`
+            : `resumeFromHistory('${item.folderId}')`;
+
+        return `
+        <div class="history-item" onclick="${resumeFunc}">
             <div class="history-info">
-                <div class="history-name">${escapeHtml(item.storyName)}</div>
+                <div class="history-name">${icon} ${escapeHtml(item.storyName)}</div>
                 <div class="history-progress">
-                    Chương ${item.currentIndex + 1}/${item.totalChapters} 
-                    ${item.currentChapterName ? '- ' + escapeHtml(item.currentChapterName.substring(0, 30)) : ''}
+                    Chương ${chapterIdx + 1}/${item.totalChapters} 
+                    ${chapterName ? '- ' + escapeHtml(chapterName.substring(0, 30)) : ''}
                 </div>
             </div>
             <div class="history-time">${timeAgo(item.lastAccessed)}</div>
-            <button class="btn-resume" onclick="event.stopPropagation(); resumeFromHistory('${item.folderId}')">
+            <button class="btn-resume" onclick="event.stopPropagation(); ${resumeFunc}">
                 ▶️ Tiếp tục
             </button>
-        </div>
-    `).join('');
+        </div>`;
+    }).join('');
 
     document.getElementById('historyCard').classList.remove('hidden');
 }
@@ -1027,5 +1072,454 @@ async function resumeAfterRelogin() {
     } catch (error) {
         console.error('Error resuming:', error);
         showMainApp();
+    }
+}
+
+// =============================================
+// READER MODE
+// =============================================
+
+let readerChapters = []; // [{id, name, number}, ...]
+let readerCurrentIndex = 0;
+let readerChaptersFolderId = null;
+let readerStoryName = '';
+
+async function openReaderMode(chaptersFolderId) {
+    readerChaptersFolderId = chaptersFolderId;
+    readerStoryName = folderHistory.length > 1
+        ? folderHistory[folderHistory.length - 1].name
+        : 'Truyện';
+
+    document.getElementById('readerStoryName').textContent = readerStoryName;
+
+    // Show reader UI, hide folder browser
+    document.getElementById('folderBrowser').classList.add('hidden');
+    document.getElementById('historyCard').classList.add('hidden');
+    document.getElementById('playerCard').classList.add('hidden');
+    document.getElementById('chapterListCard').classList.add('hidden');
+    document.getElementById('readerCard').classList.remove('hidden');
+    document.getElementById('readerChapterListCard').classList.remove('hidden');
+    document.getElementById('readerContent').innerHTML = '<div class="loading">Đang tải danh sách chương...</div>';
+
+    // Load chapters from Drive
+    try {
+        let allFiles = [];
+        let pageToken = null;
+
+        do {
+            let response;
+            if (isPublicMode) {
+                const params = new URLSearchParams({
+                    q: `'${chaptersFolderId}' in parents and trashed=false`,
+                    fields: 'nextPageToken, files(id, name, size)',
+                    pageSize: 1000,
+                    key: CONFIG.API_KEY
+                });
+                if (pageToken) params.append('pageToken', pageToken);
+                const res = await fetch(`https://www.googleapis.com/drive/v3/files?${params}`);
+                if (!res.ok) throw new Error('Failed to load chapters');
+                response = { result: await res.json() };
+            } else {
+                response = await gapi.client.drive.files.list({
+                    q: `'${chaptersFolderId}' in parents and trashed=false`,
+                    fields: 'nextPageToken, files(id, name, size)',
+                    pageSize: 1000,
+                    pageToken: pageToken
+                });
+            }
+            allFiles = allFiles.concat(response.result.files || []);
+            pageToken = response.result.nextPageToken;
+        } while (pageToken);
+
+        // Filter JSON files and sort naturally
+        readerChapters = allFiles
+            .filter(f => f.name.endsWith('.json'))
+            .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }))
+            .map((f, i) => ({
+                id: f.id,
+                name: f.name.replace('.json', '').replace(/^chapter_\d+_/, ''),
+                fullName: f.name,
+                index: i
+            }));
+
+        if (readerChapters.length === 0) {
+            document.getElementById('readerContent').innerHTML = '<div class="loading">Không tìm thấy chương nào</div>';
+            return;
+        }
+
+        // Render chapter list
+        renderReaderChapterList();
+
+        // Check for saved progress
+        const saved = getReaderProgress(chaptersFolderId);
+        const startIndex = saved ? Math.min(saved.chapterIndex, readerChapters.length - 1) : 0;
+
+        // Load first chapter
+        await loadReaderChapter(startIndex);
+
+        // Init TTS voices
+        initTtsVoices();
+
+    } catch (error) {
+        console.error('Error loading chapters:', error);
+        document.getElementById('readerContent').innerHTML =
+            '<div class="loading">Lỗi tải chương. Vui lòng thử lại.</div>';
+    }
+}
+
+function renderReaderChapterList() {
+    const container = document.getElementById('readerChapterList');
+    const total = readerChapters.length;
+
+    container.innerHTML = readerChapters.map((ch, i) => `
+        <div class="chapter-item" id="reader-chapter-${i}" onclick="loadReaderChapter(${i})">
+            <span>${escapeHtml(ch.name)}</span>
+            <span class="chapter-num">${i + 1}/${total}</span>
+        </div>
+    `).join('');
+}
+
+async function loadReaderChapter(index) {
+    if (index < 0 || index >= readerChapters.length) {
+        // End of story
+        if (index >= readerChapters.length) {
+            document.getElementById('readerContent').innerHTML =
+                '<div class="loading">🎉 Đã đọc hết truyện!</div>';
+        }
+        return;
+    }
+
+    // Stop TTS if playing
+    ttsStop();
+
+    readerCurrentIndex = index;
+    const chapter = readerChapters[index];
+
+    // Update UI
+    document.getElementById('readerChapterTitle').textContent =
+        `${chapter.name} (${index + 1}/${readerChapters.length})`;
+    document.getElementById('readerContent').innerHTML = '<div class="loading">Đang tải...</div>';
+
+    // Highlight in chapter list
+    document.querySelectorAll('#readerChapterList .chapter-item').forEach(el => el.classList.remove('playing'));
+    const chapterEl = document.getElementById(`reader-chapter-${index}`);
+    if (chapterEl) {
+        chapterEl.classList.add('playing');
+        chapterEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+
+    try {
+        let response;
+        if (isPublicMode) {
+            const url = `https://www.googleapis.com/drive/v3/files/${chapter.id}?alt=media&key=${CONFIG.API_KEY}`;
+            response = await fetch(url);
+        } else {
+            const url = `https://www.googleapis.com/drive/v3/files/${chapter.id}?alt=media`;
+            response = await fetchWithAuth(url);
+        }
+
+        if (!response.ok) throw new Error('Failed to fetch chapter');
+
+        const data = await response.json();
+
+        // Update chapter title from JSON if available
+        if (data.title) {
+            document.getElementById('readerChapterTitle').textContent =
+                `${data.title} (${index + 1}/${readerChapters.length})`;
+        }
+
+        // Extract content from JSON - content can be array or string
+        let paragraphs = [];
+        if (Array.isArray(data.content)) {
+            // Content is array of strings (StoryDownloader format)
+            paragraphs = data.content.filter(p => p && p.trim());
+        } else if (typeof data.content === 'string') {
+            paragraphs = data.content.split('\n').filter(p => p.trim());
+        } else if (typeof data.text === 'string') {
+            paragraphs = data.text.split('\n').filter(p => p.trim());
+        } else if (Array.isArray(data.text)) {
+            paragraphs = data.text.filter(p => p && p.trim());
+        } else if (typeof data === 'string') {
+            paragraphs = data.split('\n').filter(p => p.trim());
+        }
+
+        // Render content as paragraphs
+        const html = paragraphs.map((p, i) =>
+            `<p data-para="${i}">${escapeHtml(p.trim())}</p>`
+        ).join('');
+
+        document.getElementById('readerContent').innerHTML = html || '<p>Chương trống</p>';
+
+        // Scroll to top
+        document.getElementById('readerContent').scrollTop = 0;
+        window.scrollTo({ top: document.getElementById('readerCard').offsetTop - 20, behavior: 'smooth' });
+
+        // Save progress
+        saveReaderProgress();
+
+    } catch (error) {
+        console.error('Error loading chapter:', error);
+        document.getElementById('readerContent').innerHTML =
+            '<div class="loading">Lỗi tải chương. Vui lòng thử lại.</div>';
+    }
+}
+
+function readerNextChapter() {
+    loadReaderChapter(readerCurrentIndex + 1);
+}
+
+function readerPrevChapter() {
+    loadReaderChapter(readerCurrentIndex - 1);
+}
+
+function closeReader() {
+    ttsStop();
+    document.getElementById('readerCard').classList.add('hidden');
+    document.getElementById('readerChapterListCard').classList.add('hidden');
+    document.getElementById('folderBrowser').classList.remove('hidden');
+    document.getElementById('historyCard').classList.remove('hidden');
+}
+
+// =============================================
+// READER PROGRESS (per story)
+// =============================================
+
+function saveReaderProgress() {
+    if (!readerChaptersFolderId) return;
+    const history = getHistory();
+    const key = `reader_${readerChaptersFolderId}`;
+    history[key] = {
+        storyName: readerStoryName,
+        chapterIndex: readerCurrentIndex,
+        chapterName: readerChapters[readerCurrentIndex]?.name || '',
+        totalChapters: readerChapters.length,
+        lastAccessed: Date.now(),
+        folderId: readerChaptersFolderId,
+        folderHistory: folderHistory,
+        isReader: true
+    };
+    localStorage.setItem('drive_viewing_history', JSON.stringify(history));
+}
+
+function getReaderProgress(folderId) {
+    const history = getHistory();
+    return history[`reader_${folderId}`] || null;
+}
+
+async function resumeReaderFromHistory(folderId) {
+    const item = getReaderProgress(folderId);
+    if (!item) return;
+
+    try {
+        // Restore folder history
+        folderHistory = item.folderHistory || [{ id: folderId, name: item.storyName }];
+        currentFolderId = folderId;
+
+        // Show main app
+        document.getElementById('loginScreen').classList.add('hidden');
+        document.getElementById('mainApp').classList.remove('hidden');
+
+        // Open reader mode
+        await openReaderMode(folderId);
+    } catch (error) {
+        console.error('Error resuming reader:', error);
+        alert('Không thể tiếp tục đọc. Vui lòng thử lại.');
+    }
+}
+
+// =============================================
+// TTS (Text-to-Speech)
+// =============================================
+
+const synth = window.speechSynthesis;
+let ttsPlaying = false;
+let ttsCurrentPara = 0;
+let ttsUtterance = null;
+
+function initTtsVoices() {
+    const loadVoices = () => {
+        const voices = synth.getVoices();
+        const sel = document.getElementById('ttsVoice');
+        if (!sel || voices.length === 0) return;
+
+        // Vietnamese voices first
+        const viVoices = voices.filter(v => v.lang.toLowerCase().includes('vi'));
+        const otherVoices = voices.filter(v => !v.lang.toLowerCase().includes('vi'));
+
+        let html = '';
+
+        if (viVoices.length > 0) {
+            html += '<optgroup label="🇻🇳 Tiếng Việt">';
+            viVoices.forEach((v, i) => {
+                html += `<option value="${v.voiceURI}" ${i === 0 ? 'selected' : ''}>${v.name}</option>`;
+            });
+            html += '</optgroup>';
+        }
+
+        if (otherVoices.length > 0) {
+            html += '<optgroup label="🌍 Khác">';
+            otherVoices.slice(0, 15).forEach(v => {
+                html += `<option value="${v.voiceURI}">${v.name} (${v.lang})</option>`;
+            });
+            html += '</optgroup>';
+        }
+
+        html += '<option value="">Mặc định hệ thống</option>';
+        sel.innerHTML = html;
+    };
+
+    loadVoices();
+    synth.onvoiceschanged = loadVoices;
+
+    // Rate slider
+    const rateSlider = document.getElementById('ttsRate');
+    if (rateSlider) {
+        rateSlider.addEventListener('input', () => {
+            document.getElementById('ttsRateLabel').textContent = parseFloat(rateSlider.value).toFixed(1) + 'x';
+        });
+    }
+}
+
+function ttsTogglePlay() {
+    if (ttsPlaying) {
+        ttsStop();
+    } else {
+        ttsPlay();
+    }
+}
+
+function ttsPlay() {
+    const paras = document.querySelectorAll('#readerContent p[data-para]');
+    if (paras.length === 0) return;
+
+    ttsPlaying = true;
+    document.getElementById('ttsPlayBtn').textContent = '⏸️ Dừng';
+    document.getElementById('ttsPlayBtn').classList.add('playing');
+
+    ttsPlayPara(ttsCurrentPara);
+}
+
+function ttsStop() {
+    ttsPlaying = false;
+    synth.cancel();
+    document.getElementById('ttsPlayBtn').textContent = '▶️ Đọc';
+    document.getElementById('ttsPlayBtn').classList.remove('playing');
+
+    // Remove highlight
+    document.querySelectorAll('#readerContent p.tts-highlight').forEach(p => p.classList.remove('tts-highlight'));
+    document.getElementById('ttsStatus').textContent = 'Đã dừng';
+}
+
+function ttsPlayPara(index) {
+    const paras = document.querySelectorAll('#readerContent p[data-para]');
+    if (index >= paras.length) {
+        // End of chapter
+        ttsStop();
+        ttsCurrentPara = 0;
+
+        // Auto next chapter?
+        if (document.getElementById('ttsAutoNext').checked) {
+            document.getElementById('ttsStatus').textContent = '⏳ Chuyển chương sau...';
+            setTimeout(() => {
+                if (readerCurrentIndex + 1 < readerChapters.length) {
+                    loadReaderChapter(readerCurrentIndex + 1).then(() => {
+                        ttsCurrentPara = 0;
+                        ttsPlay();
+                    });
+                } else {
+                    document.getElementById('ttsStatus').textContent = '🎉 Hết truyện!';
+                }
+            }, 1500);
+        }
+        return;
+    }
+
+    if (!ttsPlaying) return;
+
+    ttsCurrentPara = index;
+    const para = paras[index];
+    const text = para.textContent;
+
+    // Highlight
+    document.querySelectorAll('#readerContent p.tts-highlight').forEach(p => p.classList.remove('tts-highlight'));
+    para.classList.add('tts-highlight');
+    para.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+    // Status
+    document.getElementById('ttsStatus').textContent = `Đoạn ${index + 1}/${paras.length}`;
+
+    // Speak
+    const rate = parseFloat(document.getElementById('ttsRate').value) || 1.0;
+    const voiceURI = document.getElementById('ttsVoice').value;
+
+    ttsUtterance = new SpeechSynthesisUtterance(text);
+    ttsUtterance.lang = 'vi-VN';
+    ttsUtterance.rate = rate;
+
+    if (voiceURI) {
+        const voice = synth.getVoices().find(v => v.voiceURI === voiceURI);
+        if (voice) ttsUtterance.voice = voice;
+    }
+
+    ttsUtterance.onend = () => {
+        if (ttsPlaying) {
+            ttsPlayPara(index + 1);
+        }
+    };
+
+    ttsUtterance.onerror = (e) => {
+        console.error('TTS error:', e);
+        if (ttsPlaying) {
+            // Skip on error
+            setTimeout(() => ttsPlayPara(index + 1), 500);
+        }
+    };
+
+    // iOS fix: speechSynthesis sometimes pauses
+    const resumeCheck = setInterval(() => {
+        if (synth.paused && ttsPlaying) {
+            synth.resume();
+        }
+        if (!ttsPlaying || !synth.speaking) {
+            clearInterval(resumeCheck);
+        }
+    }, 1000);
+
+    synth.speak(ttsUtterance);
+
+    // Media Session for lock screen
+    if ('mediaSession' in navigator) {
+        navigator.mediaSession.metadata = new MediaMetadata({
+            title: readerChapters[readerCurrentIndex]?.name || `Chương ${readerCurrentIndex + 1}`,
+            artist: readerStoryName,
+            album: `Đoạn ${index + 1}/${paras.length}`
+        });
+        navigator.mediaSession.playbackState = 'playing';
+        navigator.mediaSession.setActionHandler('play', () => ttsTogglePlay());
+        navigator.mediaSession.setActionHandler('pause', () => ttsTogglePlay());
+        navigator.mediaSession.setActionHandler('previoustrack', () => ttsPrevPara());
+        navigator.mediaSession.setActionHandler('nexttrack', () => ttsNextPara());
+    }
+}
+
+function ttsNextPara() {
+    if (synth.speaking) synth.cancel();
+    ttsPlayPara(ttsCurrentPara + 1);
+}
+
+function ttsPrevPara() {
+    if (synth.speaking) synth.cancel();
+    ttsPlayPara(Math.max(0, ttsCurrentPara - 1));
+}
+
+function toggleTtsPanel() {
+    const controls = document.getElementById('ttsControls');
+    const icon = document.getElementById('ttsToggleIcon');
+    if (controls.style.display === 'none') {
+        controls.style.display = '';
+        icon.textContent = '▼';
+    } else {
+        controls.style.display = 'none';
+        icon.textContent = '▶';
     }
 }

@@ -120,6 +120,66 @@
                 <h3>📚 Danh Sách Chương</h3>
                 <div class="chapter-list" id="chapterList"></div>
             </div>
+
+            <!-- Reader Mode -->
+            <div class="card hidden" id="readerCard">
+                <div class="reader-header">
+                    <button class="btn-small" onclick="closeReader()">← Quay lại</button>
+                    <h3 id="readerStoryName">-</h3>
+                </div>
+
+                <div class="reader-nav-top">
+                    <button class="btn" onclick="readerPrevChapter()">⏮️ Trước</button>
+                    <span id="readerChapterTitle" class="reader-chapter-title">-</span>
+                    <button class="btn" onclick="readerNextChapter()">Sau ⏭️</button>
+                </div>
+
+                <div class="reader-content" id="readerContent">
+                    <p>Chọn chương để đọc...</p>
+                </div>
+
+                <div class="reader-nav-bottom">
+                    <button class="btn" onclick="readerPrevChapter()">⏮️ Chương trước</button>
+                    <button class="btn" onclick="readerNextChapter()">Chương sau ⏭️</button>
+                </div>
+
+                <!-- TTS Controls -->
+                <div class="tts-panel" id="ttsPanel">
+                    <div class="tts-header" onclick="toggleTtsPanel()">
+                        <span>🔊 Đọc truyện</span>
+                        <span id="ttsToggleIcon">▼</span>
+                    </div>
+                    <div class="tts-controls" id="ttsControls">
+                        <div class="tts-row">
+                            <select id="ttsVoice" class="tts-select"></select>
+                        </div>
+                        <div class="tts-row">
+                            <label>Tốc độ:</label>
+                            <input type="range" id="ttsRate" min="0.5" max="2" step="0.1" value="1">
+                            <span id="ttsRateLabel">1.0x</span>
+                        </div>
+                        <div class="tts-row tts-buttons">
+                            <button class="btn tts-btn" onclick="ttsPrevPara()">⏮️</button>
+                            <button class="btn tts-btn tts-play" id="ttsPlayBtn" onclick="ttsTogglePlay()">▶️
+                                Đọc</button>
+                            <button class="btn tts-btn" onclick="ttsNextPara()">⏭️</button>
+                        </div>
+                        <div class="tts-row">
+                            <label>
+                                <input type="checkbox" id="ttsAutoNext" checked>
+                                Tự động chương sau
+                            </label>
+                        </div>
+                        <div class="tts-status" id="ttsStatus">Sẵn sàng</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Reader Chapter List -->
+            <div class="card hidden" id="readerChapterListCard">
+                <h3>📖 Danh Sách Chương</h3>
+                <div class="chapter-list" id="readerChapterList"></div>
+            </div>
         </div>
     </div>
 
