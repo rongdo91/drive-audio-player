@@ -1391,6 +1391,71 @@ const synth = window.speechSynthesis;
 let ttsPlaying = false;
 let ttsCurrentPara = 0;
 let ttsUtterance = null;
+let ttsKeepAliveAudio = null;
+
+// Silent audio keepalive - prevents iOS/Android from suspending TTS when screen off
+function ttsStartKeepAlive() {
+    try {
+        if (ttsKeepAliveAudio) return;
+
+        // Create a tiny silent WAV (44 bytes header + minimal data)
+        // This is a valid 1-second silent WAV at 8kHz mono 8-bit
+        const sampleRate = 8000;
+        const duration = 1;
+        const numSamples = sampleRate * duration;
+        const buffer = new ArrayBuffer(44 + numSamples);
+        const view = new DataView(buffer);
+
+        // WAV header
+        const writeStr = (offset, str) => {
+            for (let i = 0; i < str.length; i++) view.setUint8(offset + i, str.charCodeAt(i));
+        };
+        writeStr(0, 'RIFF');
+        view.setUint32(4, 36 + numSamples, true);
+        writeStr(8, 'WAVE');
+        writeStr(12, 'fmt ');
+        view.setUint32(16, 16, true); // chunk size
+        view.setUint16(20, 1, true); // PCM
+        view.setUint16(22, 1, true); // mono
+        view.setUint32(24, sampleRate, true);
+        view.setUint32(28, sampleRate, true); // byte rate
+        view.setUint16(32, 1, true); // block align
+        view.setUint16(34, 8, true); // bits per sample
+        writeStr(36, 'data');
+        view.setUint32(40, numSamples, true);
+
+        // Fill with silence (128 = silence in 8-bit unsigned PCM)
+        for (let i = 0; i < numSamples; i++) {
+            view.setUint8(44 + i, 128);
+        }
+
+        const blob = new Blob([buffer], { type: 'audio/wav' });
+        const url = URL.createObjectURL(blob);
+
+        ttsKeepAliveAudio = new Audio(url);
+        ttsKeepAliveAudio.loop = true;
+        ttsKeepAliveAudio.volume = 0.01; // Nearly silent
+        ttsKeepAliveAudio.play().catch(e => console.log('Keepalive audio failed:', e));
+
+        // Set Media Session to keep lock screen controls active
+        if ('mediaSession' in navigator) {
+            navigator.mediaSession.playbackState = 'playing';
+        }
+
+        console.log('TTS keepalive audio started');
+    } catch (e) {
+        console.log('Keepalive audio error:', e);
+    }
+}
+
+function ttsStopKeepAlive() {
+    if (ttsKeepAliveAudio) {
+        ttsKeepAliveAudio.pause();
+        ttsKeepAliveAudio.src = '';
+        ttsKeepAliveAudio = null;
+        console.log('TTS keepalive audio stopped');
+    }
+}
 
 function initTtsVoices() {
     const loadVoices = () => {
@@ -1452,6 +1517,9 @@ function ttsPlay() {
     document.getElementById('ttsPlayBtn').textContent = '⏸️ Dừng';
     document.getElementById('ttsPlayBtn').classList.add('playing');
 
+    // Start silent audio to keep browser alive when screen off
+    ttsStartKeepAlive();
+
     ttsPlayPara(ttsCurrentPara);
 }
 
@@ -1460,6 +1528,9 @@ function ttsStop() {
     synth.cancel();
     document.getElementById('ttsPlayBtn').textContent = '▶️ Đọc';
     document.getElementById('ttsPlayBtn').classList.remove('playing');
+
+    // Stop keepalive audio
+    ttsStopKeepAlive();
 
     // Remove highlight
     document.querySelectorAll('#readerContent p.tts-highlight').forEach(p => p.classList.remove('tts-highlight'));
