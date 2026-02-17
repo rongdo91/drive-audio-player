@@ -476,16 +476,19 @@ function renderFolderContents(files) {
 
         html += `<div style="text-align: center; padding: 20px 0;">`;
         html += `<h3 style="margin-bottom: 15px; font-size: 18px;">${escapeHtml(storyName)}</h3>`;
-        html += `<div class="story-actions" style="border-top: none; justify-content: center;">`;
+        html += `<div class="story-actions" style="border-top: none; justify-content: center; gap: 12px; display: flex; flex-wrap: wrap;">`;
 
         if (chaptersFolder) {
-            html += `<button class="btn-reader" onclick="openReaderMode('${chaptersFolder.id}')">📖 Đọc Truyện</button>`;
+            html += `<button class="btn-reader" onclick="openReaderMode('${chaptersFolder.id}')" style="font-size: 16px; padding: 14px 28px;">📖 Đọc Truyện</button>`;
         }
         if (audioFolder) {
-            html += `<button class="btn-reader btn-audio" onclick="openFolder('${audioFolder.id}', 'audio')">🎵 Nghe Audio</button>`;
+            html += `<button class="btn-reader btn-audio" onclick="openFolder('${audioFolder.id}', 'audio')" style="font-size: 16px; padding: 14px 28px;">🎵 Nghe Audio</button>`;
         }
 
         html += `</div></div>`;
+
+        // Scroll to top so buttons are visible
+        setTimeout(() => window.scrollTo({ top: 0, behavior: 'smooth' }), 100);
 
         // Also show other folders/files if any
         const otherFolders = folders.filter(f => f.name.toLowerCase() !== 'chapters' && f.name.toLowerCase() !== 'audio');
@@ -1101,8 +1104,57 @@ async function openReaderMode(chaptersFolderId) {
     document.getElementById('readerChapterListCard').classList.remove('hidden');
     document.getElementById('readerContent').innerHTML = '<div class="loading">Đang tải danh sách chương...</div>';
 
+    // Scroll to top
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+
     // Load chapters from Drive
     try {
+        // Try to load index.json from parent story folder for chapter titles
+        let chapterTitlesMap = {};
+        try {
+            const storyFolderId = currentFolderId; // parent of chapters folder
+            let indexFile = null;
+
+            // Find index.json in the story folder
+            if (isPublicMode) {
+                const params = new URLSearchParams({
+                    q: `'${storyFolderId}' in parents and name='index.json' and trashed=false`,
+                    fields: 'files(id)',
+                    key: CONFIG.API_KEY
+                });
+                const res = await fetch(`https://www.googleapis.com/drive/v3/files?${params}`);
+                if (res.ok) {
+                    const data = await res.json();
+                    indexFile = data.files?.[0];
+                }
+            } else {
+                const resp = await gapi.client.drive.files.list({
+                    q: `'${storyFolderId}' in parents and name='index.json' and trashed=false`,
+                    fields: 'files(id)'
+                });
+                indexFile = resp.result.files?.[0];
+            }
+
+            if (indexFile) {
+                let indexRes;
+                if (isPublicMode) {
+                    indexRes = await fetch(`https://www.googleapis.com/drive/v3/files/${indexFile.id}?alt=media&key=${CONFIG.API_KEY}`);
+                } else {
+                    indexRes = await fetchWithAuth(`https://www.googleapis.com/drive/v3/files/${indexFile.id}?alt=media`);
+                }
+                if (indexRes.ok) {
+                    const indexData = await indexRes.json();
+                    if (indexData.chapters && Array.isArray(indexData.chapters)) {
+                        indexData.chapters.forEach(ch => {
+                            chapterTitlesMap[ch.number] = ch.title;
+                        });
+                    }
+                }
+            }
+        } catch (e) {
+            console.log('index.json not available, using filenames:', e);
+        }
+
         let allFiles = [];
         let pageToken = null;
 
@@ -1135,12 +1187,16 @@ async function openReaderMode(chaptersFolderId) {
         readerChapters = allFiles
             .filter(f => f.name.endsWith('.json'))
             .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }))
-            .map((f, i) => ({
-                id: f.id,
-                name: f.name.replace('.json', '').replace(/^chapter_\d+_/, ''),
-                fullName: f.name,
-                index: i
-            }));
+            .map((f, i) => {
+                const num = parseInt(f.name.replace('.json', ''));
+                const title = chapterTitlesMap[num] || f.name.replace('.json', '').replace(/^chapter_\d+_/, '');
+                return {
+                    id: f.id,
+                    name: title,
+                    fullName: f.name,
+                    index: i
+                };
+            });
 
         if (readerChapters.length === 0) {
             document.getElementById('readerContent').innerHTML = '<div class="loading">Không tìm thấy chương nào</div>';
