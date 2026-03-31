@@ -1780,20 +1780,36 @@ function playGoogleTts(text, rate, onend) {
     
     googleAudioInstance.playbackRate = rate;
     googleOnEnd = onend;
-    
-    // Chunk array by words strictly max 180 chars to avoid Google HTTP 400 
+    // Chunk array max 180 chars strictly, by word/punc boundary 
     googleChunks = [];
-    const words = text.split(/\s+/);
-    let temp = "";
-    for(let i=0; i<words.length; i++) {
-        if((temp + " " + words[i]).length > 180) {
-            if(temp.trim().length > 0) googleChunks.push(temp.trim());
-            temp = words[i];
-        } else {
-            temp += (temp ? " " : "") + words[i];
+    let currentIndex = 0;
+    while (currentIndex < text.length) {
+        let sliceLen = 180;
+        if (currentIndex + sliceLen < text.length) {
+            let lastSpace = text.lastIndexOf(' ', currentIndex + sliceLen);
+            let lastPunc = Math.max(
+                text.lastIndexOf(',', currentIndex + sliceLen),
+                text.lastIndexOf('.', currentIndex + sliceLen),
+                text.lastIndexOf('\n', currentIndex + sliceLen)
+            );
+            
+            let splitPoint = Math.max(lastSpace, lastPunc);
+            if (splitPoint > currentIndex) {
+                sliceLen = splitPoint - currentIndex + 1;
+            }
         }
+        
+        let chunk = text.substr(currentIndex, sliceLen).trim();
+        // Only keep chunks that have actual letters or numbers 
+        if (chunk.length > 0 && /[a-zA-ZÀ-ỹ0-9]/.test(chunk)) {
+            // Further clean up massive repeating symbols to not bore the listener
+            chunk = chunk.replace(/[-=_*~]{3,}/g, '');
+            if (chunk.trim().length > 0) {
+                googleChunks.push(chunk.trim());
+            }
+        }
+        currentIndex += sliceLen;
     }
-    if(temp.trim().length > 0) googleChunks.push(temp.trim());
     
     googleChunkIndex = 0;
     
@@ -1823,7 +1839,7 @@ function playNextGoogleChunk() {
         return;
     }
 
-    const url = `https://translate.googleapis.com/translate_tts?client=gtx&ie=UTF-8&tl=vi&q=${encodeURIComponent(chunk)}`;
+    const url = `https://translate.googleapis.com/translate_tts?client=tw-ob&ie=UTF-8&tl=vi&q=${encodeURIComponent(chunk)}`;
     
     googleAudioInstance.src = url;
     googleAudioInstance.playbackRate = parseFloat(document.getElementById('ttsRate').value) || 1.0;
