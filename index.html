@@ -12,6 +12,7 @@
     <div class="container">
         <header>
             <h1>🎧 Drive Audio Player</h1>
+            <button id="themeToggleBtn" class="btn-small" onclick="toggleTheme()" title="Chuyển đổi Sáng/Tối">☀️ Sáng</button>
             <div id="userInfo" class="user-info hidden">
                 <img id="userAvatar" class="avatar" src="" alt="">
                 <span id="userName"></span>
@@ -108,6 +109,18 @@
                         <input type="checkbox" id="autoNext" checked>
                         Tự động chuyển chương
                     </label>
+                </div>
+                
+                <div class="sleep-timer-controls">
+                    <span>⏳ Hẹn giờ:</span>
+                    <select id="sleepTimerSelect" onchange="setSleepTimer()">
+                        <option value="0">Tắt</option>
+                        <option value="15">15 phút</option>
+                        <option value="30">30 phút</option>
+                        <option value="60">60 phút</option>
+                        <option value="end_of_chapter">Hết chương này</option>
+                    </select>
+                    <span id="sleepTimerCountdown" class="hidden"></span>
                 </div>
 
                 <div class="progress-info">

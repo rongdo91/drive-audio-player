@@ -22,6 +22,17 @@ body {
     color: var(--text);
     min-height: 100vh;
     line-height: 1.6;
+    transition: background-color 0.3s, color 0.3s;
+}
+
+body.light-mode {
+    --bg: #f4f4f9;
+    --card: #ffffff;
+    --card-hover: #f0f0f5;
+    --text: #2c2c35;
+    --text-muted: #6b6b80;
+    --accent: #5254e1;
+    --border: #e2e2ec;
 }
 
 .container {
@@ -298,6 +309,7 @@ audio {
     justify-content: center;
     gap: 10px;
     font-size: 14px;
+    margin-bottom: 10px;
 }
 
 .options label {
@@ -311,6 +323,31 @@ audio {
     width: 18px;
     height: 18px;
     accent-color: var(--accent);
+}
+
+.sleep-timer-controls {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 8px;
+    font-size: 14px;
+    margin-bottom: 15px;
+}
+
+.sleep-timer-controls select {
+    padding: 6px 12px;
+    border-radius: 6px;
+    background: var(--bg);
+    color: var(--text);
+    border: 1px solid var(--border);
+    outline: none;
+}
+
+#sleepTimerCountdown {
+    color: var(--accent);
+    font-weight: bold;
+    font-size: 13px;
+    margin-left: 10px;
 }
 
 .progress-info {

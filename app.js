@@ -21,9 +21,94 @@ window.onload = function () {
     // Load saved state
     loadSavedState();
 
+    // Load theme
+    loadTheme();
+
     // Initialize Google API
     gapi.load('client', initializeGapiClient);
 };
+
+// =============================================
+// THEME AND SETTINGS
+// =============================================
+function loadTheme() {
+    const savedTheme = localStorage.getItem('drive_theme');
+    const themeBtn = document.getElementById('themeToggleBtn');
+    if (savedTheme === 'light') {
+        document.body.classList.add('light-mode');
+        if (themeBtn) themeBtn.innerHTML = '🌙 Tối';
+    } else {
+        document.body.classList.remove('light-mode');
+        if (themeBtn) themeBtn.innerHTML = '☀️ Sáng';
+    }
+}
+
+function toggleTheme() {
+    const isLight = document.body.classList.toggle('light-mode');
+    const themeBtn = document.getElementById('themeToggleBtn');
+    if (isLight) {
+        localStorage.setItem('drive_theme', 'light');
+        if (themeBtn) themeBtn.innerHTML = '🌙 Tối';
+    } else {
+        localStorage.setItem('drive_theme', 'dark');
+        if (themeBtn) themeBtn.innerHTML = '☀️ Sáng';
+    }
+}
+
+// =============================================
+// SLEEP TIMER
+// =============================================
+let sleepTimerInterval = null;
+let sleepTimerTimeout = null;
+let sleepTimerEndTime = 0;
+
+function setSleepTimer() {
+    const select = document.getElementById('sleepTimerSelect');
+    const countdownEl = document.getElementById('sleepTimerCountdown');
+    const val = select.value;
+
+    // Clear existing
+    if (sleepTimerInterval) clearInterval(sleepTimerInterval);
+    if (sleepTimerTimeout) clearTimeout(sleepTimerTimeout);
+    
+    if (val === '0') {
+        countdownEl.classList.add('hidden');
+        return;
+    }
+
+    if (val === 'end_of_chapter') {
+        countdownEl.classList.remove('hidden');
+        countdownEl.textContent = '(Hết chương)';
+        return; // Will be handled by audio 'ended' event
+    }
+
+    // Minutes to MS
+    const ms = parseInt(val) * 60 * 1000;
+    sleepTimerEndTime = Date.now() + ms;
+    
+    countdownEl.classList.remove('hidden');
+    
+    // Update countdown text every second
+    sleepTimerInterval = setInterval(() => {
+        const diff = sleepTimerEndTime - Date.now();
+        if (diff <= 0) {
+            clearInterval(sleepTimerInterval);
+        } else {
+            const m = Math.floor(diff / 60000);
+            const s = Math.floor((diff % 60000) / 1000);
+            countdownEl.textContent = `${m}:${s.toString().padStart(2, '0')}`;
+        }
+    }, 1000);
+
+    // Stop audio triggered
+    sleepTimerTimeout = setTimeout(() => {
+        audio.pause();
+        select.value = '0';
+        countdownEl.classList.add('hidden');
+        clearInterval(sleepTimerInterval);
+        alert('Đã hết thời gian hẹn giờ đi ngủ!');
+    }, ms);
+}
 
 async function initializeGapiClient() {
     try {
@@ -682,6 +767,15 @@ function setSpeed(speed) {
 
 // Auto next
 audio.addEventListener('ended', () => {
+    // Check if sleep timer is set to 'end_of_chapter'
+    const select = document.getElementById('sleepTimerSelect');
+    if (select && select.value === 'end_of_chapter') {
+        // Reset timer and DO NOT play next
+        select.value = '0';
+        document.getElementById('sleepTimerCountdown').classList.add('hidden');
+        return;
+    }
+
     if (document.getElementById('autoNext').checked) {
         playNext();
     }
