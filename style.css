@@ -713,3 +713,9 @@ audio {
     text-align: center;
     margin-top: 8px;
 }
+
+@media (max-width: 600px) {
+    .hide-mobile {
+        display: none !important;
+    }
+}

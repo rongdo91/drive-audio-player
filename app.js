@@ -373,27 +373,23 @@ function handlePublicAccess() {
 }
 
 function showPublicModeIndicator() {
-    // Remove old indicator if exists
-    const old = document.getElementById('publicModeBar');
-    if (old) old.remove();
-
-    const bar = document.createElement('div');
-    bar.id = 'publicModeBar';
-    bar.style.cssText = `
-        position: fixed; top: 0; left: 0; right: 0; z-index: 9999;
-        background: linear-gradient(135deg, #22c55e, #16a34a);
-        color: white; padding: 8px 20px;
-        display: flex; justify-content: space-between; align-items: center;
-        font-size: 13px;
-    `;
-    bar.innerHTML = `
-        <span>🌐 Chế độ công khai - Không cần đăng nhập</span>
-        <button onclick="handleSignOut()" style="
-            background: rgba(255,255,255,0.2); color: white; border: none;
-            padding: 6px 12px; border-radius: 6px; cursor: pointer;
-        ">Đổi chế độ</button>
-    `;
-    document.body.prepend(bar);
+    // Thay vì tạo banner to chiếm chỗ, ta nhúng thẳng vào Header (vị trí User Info)
+    const userInfo = document.getElementById('userInfo');
+    const avatar = document.getElementById('userAvatar');
+    const userName = document.getElementById('userName');
+    const btnBox = document.querySelector('#userInfo button');
+    
+    if(avatar) avatar.style.display = 'none';
+    if(userName) {
+        userName.innerHTML = '<span style="color:var(--primary-color, #10b981); font-weight:bold; font-size:13px;">🌐 <span class="hide-mobile">Chế độ </span>Công khai</span>';
+    }
+    if(btnBox) {
+        btnBox.textContent = 'Đổi chế độ';
+    }
+    
+    if(userInfo) {
+        userInfo.classList.remove('hidden');
+    }
 }
 
 async function fetchUserInfo() {
