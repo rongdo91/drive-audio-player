@@ -1769,9 +1769,11 @@ let googleOnEnd = null;
 function playGoogleTts(text, rate, onend) {
     if (!googleAudioInstance) {
         googleAudioInstance = new Audio();
+        googleAudioInstance.setAttribute('playsinline', '');
         googleAudioInstance.onended = () => playNextGoogleChunk();
         googleAudioInstance.onerror = () => {
             console.warn("Google TTS Error, skipping chunk");
+            // Retry next chunk
             setTimeout(playNextGoogleChunk, 500);
         };
     }
@@ -1779,20 +1781,26 @@ function playGoogleTts(text, rate, onend) {
     googleAudioInstance.playbackRate = rate;
     googleOnEnd = onend;
     
+    // Chunk array by words strictly max 180 chars to avoid Google HTTP 400 
     googleChunks = [];
-    const sentences = text.split(/([.,;:!?\n]+)/);
+    const words = text.split(/\s+/);
     let temp = "";
-    for(let i=0; i<sentences.length; i++) {
-        if((temp + sentences[i]).length > 180) {
-            if(temp) googleChunks.push(temp.trim());
-            temp = sentences[i];
+    for(let i=0; i<words.length; i++) {
+        if((temp + " " + words[i]).length > 180) {
+            if(temp.trim().length > 0) googleChunks.push(temp.trim());
+            temp = words[i];
         } else {
-            temp += sentences[i];
+            temp += (temp ? " " : "") + words[i];
         }
     }
-    if(temp) googleChunks.push(temp.trim());
-    googleChunks = googleChunks.filter(c => c.length > 0);
+    if(temp.trim().length > 0) googleChunks.push(temp.trim());
+    
     googleChunkIndex = 0;
+    
+    if (googleChunks.length === 0) {
+        if(onend) onend();
+        return;
+    }
     
     playNextGoogleChunk();
 }
@@ -1809,15 +1817,23 @@ function playNextGoogleChunk() {
     }
     
     const chunk = googleChunks[googleChunkIndex++];
+    // Prevent empty chunks totally 
+    if(!chunk) {
+        playNextGoogleChunk();
+        return;
+    }
+
     const url = `https://translate.googleapis.com/translate_tts?client=gtx&ie=UTF-8&tl=vi&q=${encodeURIComponent(chunk)}`;
     
     googleAudioInstance.src = url;
     googleAudioInstance.playbackRate = parseFloat(document.getElementById('ttsRate').value) || 1.0;
+    googleAudioInstance.load(); // Force iOS to load the new src
     
     const playPromise = googleAudioInstance.play();
     if (playPromise !== undefined) {
         playPromise.catch(e => {
-            console.error("Audio block play failed", e);
+            console.error("Audio block play failed on iOS:", e);
+            // Ignore error and try next chapter if iOS blocked it entirely, but if we're in background, we shouldn't stop!
             setTimeout(playNextGoogleChunk, 500);
         });
     }
