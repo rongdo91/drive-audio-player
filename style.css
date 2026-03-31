@@ -608,11 +608,17 @@ audio {
 
 /* TTS Panel */
 .tts-panel {
-    margin-top: 20px;
-    background: var(--bg);
+    position: fixed;
+    top: 65px;
+    right: 15px;
+    background: var(--card);
     border-radius: 12px;
     overflow: hidden;
-    border: 1px solid var(--border);
+    border: 1px solid var(--accent);
+    box-shadow: 0 8px 24px rgba(0,0,0,0.25);
+    z-index: 99;
+    width: calc(100% - 30px);
+    max-width: 320px;
 }
 
 .tts-header {

@@ -137,8 +137,9 @@
             <!-- Reader Mode -->
             <div class="card hidden" id="readerCard">
                 <div class="reader-header">
-                    <button class="btn-small" onclick="closeReader()">← Quay lại</button>
+                    <button class="btn-small" onclick="closeReader()">← Quay l\u1EA1i</button>
                     <h3 id="readerStoryName">-</h3>
+                    <button class="btn-small" onclick="toggleTtsMenu()" title="B\u1EA3ng \u0110i\u1EC1u Khi\u1EC3n Gi\u1ECDng \u0110\u1ECDc">🎧</button>
                 </div>
 
                 <div class="reader-nav-top">
@@ -157,10 +158,10 @@
                 </div>
 
                 <!-- TTS Controls -->
-                <div class="tts-panel" id="ttsPanel">
-                    <div class="tts-header" onclick="toggleTtsPanel()">
-                        <span>🔊 Đọc truyện</span>
-                        <span id="ttsToggleIcon">▼</span>
+                <div class="tts-panel" id="ttsPanel" style="display: none;">
+                    <div class="tts-header">
+                        <span>🔊 \u0110\u01A1n V\u1ECB \u0110\u1ECDc Truy\u1EC7n</span>
+                        <span onclick="toggleTtsMenu()" style="cursor: pointer; padding: 0 10px;">❌</span>
                     </div>
                     <div class="tts-controls" id="ttsControls">
                         <div class="tts-row">

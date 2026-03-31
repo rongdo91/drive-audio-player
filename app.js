@@ -1564,7 +1564,21 @@ function initTtsVoices() {
         let html = '';
 
         if (viVoices.length > 0) {
-            html += '<optgroup label="🇻🇳 Tiếng Việt">';
+            html += '<optgroup label="🇻🇳 Tiếng Việt (Khuyên Dùng Hoài My / Google)">';
+            
+            // Tự động xếp Hoài My và Google lên hàng đầu
+            viVoices.sort((a, b) => {
+                const nameA = a.name.toLowerCase();
+                const nameB = b.name.toLowerCase();
+                const getScore = (name) => {
+                    if (name.includes('hoài my') || name.includes('hoai my')) return 3;
+                    if (name.includes('nam minh')) return 2;
+                    if (name.includes('google')) return 1;
+                    return 0;
+                };
+                return getScore(nameB) - getScore(nameA);
+            });
+
             viVoices.forEach((v, i) => {
                 html += `<option value="${v.voiceURI}" ${i === 0 ? 'selected' : ''}>${v.name}</option>`;
             });
@@ -1733,14 +1747,11 @@ function ttsPrevPara() {
     ttsPlayPara(Math.max(0, ttsCurrentPara - 1));
 }
 
-function toggleTtsPanel() {
-    const controls = document.getElementById('ttsControls');
-    const icon = document.getElementById('ttsToggleIcon');
-    if (controls.style.display === 'none') {
-        controls.style.display = '';
-        icon.textContent = '▼';
+function toggleTtsMenu() {
+    const panel = document.getElementById('ttsPanel');
+    if (panel.style.display === 'none') {
+        panel.style.display = 'block';
     } else {
-        controls.style.display = 'none';
-        icon.textContent = '▶';
+        panel.style.display = 'none';
     }
 }
