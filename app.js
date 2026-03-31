@@ -1563,8 +1563,12 @@ function initTtsVoices() {
 
         let html = '';
 
+        html += '<optgroup label="🌐 Gi\u1ECDng \u0110ám Mây (Chrome iOS / N\u1EC1n T\u1EA3ng ph\u1EE5) - H\u1ED7 tr\u1EE3 \u0111\u1ECDc khi t\u1EAFt m\u00E0n h\u00ECnh!">';
+        html += '<option value="google_online">\u2601\uFE0F Google Ti\u1EBFng Vi\u1EC7t (C\u1EA7n Internet)</option>';
+        html += '</optgroup>';
+
         if (viVoices.length > 0) {
-            html += '<optgroup label="🇻🇳 Tiếng Việt (Khuyên Dùng Hoài My / Google)">';
+            html += '<optgroup label="\uD83C\uDDFB\uD83C\uDDF3 Ti\u1EBFng Vi\u1EC7t C\u1EE7a M\u00E1y (N\u1EBFu d\u00F9ng Edge n\u00EAn ch\u1ECDn Ho\u00E0i My)">';
             
             // Tự động xếp Hoài My và Google lên hàng đầu
             viVoices.sort((a, b) => {
@@ -1634,6 +1638,10 @@ function ttsPlay() {
 function ttsStop() {
     ttsPlaying = false;
     synth.cancel();
+    if(googleAudioInstance) {
+        googleAudioInstance.pause();
+        googleAudioInstance.removeAttribute('src');
+    }
     document.getElementById('ttsPlayBtn').textContent = '▶️ Đọc';
     document.getElementById('ttsPlayBtn').classList.remove('playing');
 
@@ -1681,11 +1689,18 @@ function ttsPlayPara(index) {
     para.scrollIntoView({ behavior: 'smooth', block: 'center' });
 
     // Status
-    document.getElementById('ttsStatus').textContent = `Đoạn ${index + 1}/${paras.length}`;
+    document.getElementById('ttsStatus').textContent = `\u0110oạn ${index + 1}/${paras.length}`;
 
     // Speak
     const rate = parseFloat(document.getElementById('ttsRate').value) || 1.0;
     const voiceURI = document.getElementById('ttsVoice').value;
+
+    if (voiceURI === 'google_online') {
+        playGoogleTts(text, rate, () => {
+            if (ttsPlaying) ttsPlayPara(index + 1);
+        });
+        return;
+    }
 
     ttsUtterance = new SpeechSynthesisUtterance(text);
     ttsUtterance.lang = 'vi-VN';
@@ -1739,12 +1754,77 @@ function ttsPlayPara(index) {
 
 function ttsNextPara() {
     if (synth.speaking) synth.cancel();
+    if (googleAudioInstance) { googleAudioInstance.pause(); googleAudioInstance.removeAttribute('src'); }
     ttsPlayPara(ttsCurrentPara + 1);
 }
 
 function ttsPrevPara() {
     if (synth.speaking) synth.cancel();
+    if (googleAudioInstance) { googleAudioInstance.pause(); googleAudioInstance.removeAttribute('src'); }
     ttsPlayPara(Math.max(0, ttsCurrentPara - 1));
+}
+
+// === GOOGLE ONLINE TTS ENGINE ===
+let googleAudioInstance = null;
+let googleChunks = [];
+let googleChunkIndex = 0;
+let googleOnEnd = null;
+
+function playGoogleTts(text, rate, onend) {
+    if (!googleAudioInstance) {
+        googleAudioInstance = new Audio();
+        googleAudioInstance.onended = () => playNextGoogleChunk();
+        googleAudioInstance.onerror = () => {
+            console.warn("Google TTS Error, skipping chunk");
+            setTimeout(playNextGoogleChunk, 500);
+        };
+    }
+    
+    googleAudioInstance.playbackRate = rate;
+    googleOnEnd = onend;
+    
+    googleChunks = [];
+    const sentences = text.split(/([.,;:!?\n]+)/);
+    let temp = "";
+    for(let i=0; i<sentences.length; i++) {
+        if((temp + sentences[i]).length > 180) {
+            if(temp) googleChunks.push(temp.trim());
+            temp = sentences[i];
+        } else {
+            temp += sentences[i];
+        }
+    }
+    if(temp) googleChunks.push(temp.trim());
+    googleChunks = googleChunks.filter(c => c.length > 0);
+    googleChunkIndex = 0;
+    
+    playNextGoogleChunk();
+}
+
+function playNextGoogleChunk() {
+    if (!ttsPlaying) {
+        if(googleAudioInstance) googleAudioInstance.pause();
+        return;
+    }
+    
+    if (googleChunkIndex >= googleChunks.length) {
+        if (googleOnEnd) googleOnEnd();
+        return;
+    }
+    
+    const chunk = googleChunks[googleChunkIndex++];
+    const url = `https://translate.googleapis.com/translate_tts?client=gtx&ie=UTF-8&tl=vi&q=${encodeURIComponent(chunk)}`;
+    
+    googleAudioInstance.src = url;
+    googleAudioInstance.playbackRate = parseFloat(document.getElementById('ttsRate').value) || 1.0;
+    
+    const playPromise = googleAudioInstance.play();
+    if (playPromise !== undefined) {
+        playPromise.catch(e => {
+            console.error("Audio block play failed", e);
+            setTimeout(playNextGoogleChunk, 500);
+        });
+    }
 }
 
 function toggleTtsMenu() {
