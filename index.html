@@ -143,9 +143,9 @@
                 </div>
 
                 <div class="reader-nav-top">
-                    <button class="btn" onclick="readerPrevChapter()">⏮️ Trước</button>
+                    <a href="#" class="btn" id="btnPrevTop" rel="prev" onclick="event.preventDefault(); readerPrevChapter();">⏮️ Trước</a>
                     <span id="readerChapterTitle" class="reader-chapter-title">-</span>
-                    <button class="btn" onclick="readerNextChapter()">Sau ⏭️</button>
+                    <a href="#" class="btn" id="btnNextTop" rel="next" onclick="event.preventDefault(); readerNextChapter();">Sau ⏭️</a>
                 </div>
 
                 <div class="reader-content" id="readerContent">
@@ -153,8 +153,8 @@
                 </div>
 
                 <div class="reader-nav-bottom">
-                    <button class="btn" onclick="readerPrevChapter()">⏮️ Chương trước</button>
-                    <button class="btn" onclick="readerNextChapter()">Chương sau ⏭️</button>
+                    <a href="#" class="btn" id="btnPrevBottom" rel="prev" onclick="event.preventDefault(); readerPrevChapter();">⏮️ Chương trước</a>
+                    <a href="#" class="btn" id="btnNextBottom" rel="next" onclick="event.preventDefault(); readerNextChapter();">Chương sau ⏭️</a>
                 </div>
 
                 <!-- TTS Controls -->

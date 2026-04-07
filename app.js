@@ -1342,9 +1342,21 @@ async function loadReaderChapter(index) {
     const chapter = readerChapters[index];
 
     // Update UI
+    document.title = `${chapter.name} - ${readerStoryName}`;
     document.getElementById('readerChapterTitle').textContent =
         `${chapter.name} (${index + 1}/${readerChapters.length})`;
     document.getElementById('readerContent').innerHTML = '<div class="loading">Đang tải...</div>';
+
+    // Cập nhật href cho các nút điều hướng (Dành cho iOS Siri / VoiceOver)
+    const prevChapUrl = `#chap-${Math.max(0, index - 1)}`;
+    const nextChapUrl = `#chap-${Math.min(readerChapters.length - 1, index + 1)}`;
+    document.getElementById('btnPrevTop').href = prevChapUrl;
+    document.getElementById('btnPrevBottom').href = prevChapUrl;
+    document.getElementById('btnNextTop').href = nextChapUrl;
+    document.getElementById('btnNextBottom').href = nextChapUrl;
+    
+    // Cập nhật thanh địa chỉ mà không reload trang
+    history.pushState(null, null, `#chap-${index}`);
 
     // Highlight in chapter list
     document.querySelectorAll('#readerChapterList .chapter-item').forEach(el => el.classList.remove('playing'));
